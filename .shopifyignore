@@ -1,0 +1,11 @@
+# Non-theme files that must never be pushed to Shopify
+package.json
+package-lock.json
+node_modules/
+.github/
+.husky/
+.vscode/
+README.md
+.theme-check.yml
+.gitignore
+.shopifyignore

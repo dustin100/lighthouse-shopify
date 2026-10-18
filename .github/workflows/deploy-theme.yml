@@ -1,0 +1,63 @@
+name: Deploy theme
+
+on:
+  push:
+    branches: [main, staging, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
+      SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
+      SHOPIFY_CLI_TTY: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target theme
+        id: target
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            main)    echo "theme_id=189554491613" >> "$GITHUB_OUTPUT" ;;
+            staging) echo "theme_id=189554917597" >> "$GITHUB_OUTPUT" ;;
+            dev)     echo "theme_id=189554884829" >> "$GITHUB_OUTPUT" ;;
+            *) echo "No theme mapped to branch ${GITHUB_REF_NAME}"; exit 1 ;;
+          esac
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build (Theme Check)
+        run: npm run build
+
+      - name: Push to live theme (customizer JSON preserved)
+        if: github.ref_name == 'main'
+        run: |
+          npx shopify theme push \
+            --theme "${{ steps.target.outputs.theme_id }}" \
+            --password "$SHOPIFY_CLI_THEME_TOKEN" \
+            --allow-live \
+            --nodelete \
+            --ignore "config/settings_data.json" \
+            --ignore "templates/*.json" \
+            --ignore "templates/customers/*.json" \
+            --ignore "sections/*.json" \
+            --ignore "locales/*.json"
+
+      - name: Push to ${{ github.ref_name }} theme
+        if: github.ref_name != 'main'
+        run: |
+          npx shopify theme push \
+            --theme "${{ steps.target.outputs.theme_id }}" \
+            --password "$SHOPIFY_CLI_THEME_TOKEN" \
+            --nodelete

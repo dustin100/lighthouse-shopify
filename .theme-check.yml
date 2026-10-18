@@ -1,0 +1,8 @@
+extends: theme-check:recommended
+ignore:
+  - node_modules/*
+
+# Stock-theme issues downgraded so they don't block commits/deploys.
+# Non-English locales are missing upstream keys (e.g. selling_plans.one_time_purchase).
+MatchingTranslations:
+  severity: warning
