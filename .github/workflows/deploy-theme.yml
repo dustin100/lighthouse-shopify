@@ -13,6 +13,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name }}
+    outputs:
+      theme_id: ${{ steps.target.outputs.theme_id }}
     env:
       SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
       SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
@@ -61,3 +63,36 @@ jobs:
             --theme "${{ steps.target.outputs.theme_id }}" \
             --password "$SHOPIFY_CLI_THEME_TOKEN" \
             --nodelete
+
+  lighthouse:
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      SHOPIFY_STOREFRONT_PASSWORD: ${{ secrets.SHOPIFY_STOREFRONT_PASSWORD }}
+      # Live is audited without preview_theme_id; other branches audit their preview theme.
+      LHCI_THEME_ID: ${{ github.ref_name != 'main' && needs.deploy.outputs.theme_id || '' }}
+      LHCI_LABEL: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run Lighthouse CI
+        run: npm run lighthouse
+
+      - name: Score summary
+        if: always()
+        run: node .lighthouse/summary.cjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-${{ github.ref_name }}
+          path: .lighthouseci/reports

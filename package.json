@@ -8,10 +8,13 @@
     "pull:live": "shopify theme pull --store test-lighthouse-heattaoe --theme 189554491613",
     "lint": "shopify theme check --fail-level error",
     "build": "npm run lint",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lighthouse": "lhci autorun"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.15.1",
     "@shopify/cli": "^4.9.4",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "puppeteer": "^25.14.0"
   }
 }
