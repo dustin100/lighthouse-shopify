@@ -13,6 +13,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name }}
+    outputs:
+      theme_id: ${{ steps.target.outputs.theme_id }}
     env:
       SHOPIFY_FLAG_STORE: ${{ secrets.SHOPIFY_FLAG_STORE }}
       SHOPIFY_CLI_THEME_TOKEN: ${{ secrets.SHOPIFY_CLI_THEME_TOKEN }}
@@ -61,3 +63,60 @@ jobs:
             --theme "${{ steps.target.outputs.theme_id }}" \
             --password "$SHOPIFY_CLI_THEME_TOKEN" \
             --nodelete
+
+  lighthouse:
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    permissions:
+      contents: read
+      actions: read # download the previous run's reports
+      statuses: write # post per-page Lighthouse statuses on the commit
+    env:
+      SHOPIFY_STOREFRONT_PASSWORD: ${{ secrets.SHOPIFY_STOREFRONT_PASSWORD }}
+      # Live is audited without preview_theme_id; other branches audit their preview theme.
+      LHCI_THEME_ID: ${{ github.ref_name != 'main' && needs.deploy.outputs.theme_id || '' }}
+      LHCI_LABEL: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run Lighthouse CI
+        run: npm run lighthouse
+
+      # Best effort: the summary just skips the comparison if there's no earlier run or its artifact expired.
+      - name: Download previous reports
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run_id=$(gh run list --workflow deploy-theme.yml --branch "$GITHUB_REF_NAME" --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$run_id" ]; then echo "No previous successful run on $GITHUB_REF_NAME"; exit 0; fi
+          gh run download "$run_id" --name "lighthouse-$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/lighthouse-baseline"
+          echo "LHCI_BASELINE_DIR=$RUNNER_TEMP/lighthouse-baseline" >> "$GITHUB_ENV"
+          echo "LHCI_BASELINE_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id" >> "$GITHUB_ENV"
+
+      - name: Score summary
+        if: always()
+        run: node .lighthouse/summary.cjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit statuses
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .lighthouse/status.cjs
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-${{ github.ref_name }}
+          path: .lighthouseci/reports
