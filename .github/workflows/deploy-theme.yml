@@ -77,6 +77,9 @@ jobs:
       # Live is audited without preview_theme_id; other branches audit their preview theme.
       LHCI_THEME_ID: ${{ github.ref_name != 'main' && needs.deploy.outputs.theme_id || '' }}
       LHCI_LABEL: ${{ github.ref_name }}
+      # Only silences LHCI's "GitHub token not set" healthcheck warning; the filesystem target
+      # never posts statuses (.lighthouse/status.cjs does that).
+      LHCI_GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
