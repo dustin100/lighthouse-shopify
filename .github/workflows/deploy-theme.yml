@@ -77,6 +77,9 @@ jobs:
       # Live is audited without preview_theme_id; other branches audit their preview theme.
       LHCI_THEME_ID: ${{ github.ref_name != 'main' && needs.deploy.outputs.theme_id || '' }}
       LHCI_LABEL: ${{ github.ref_name }}
+      # Only silences LHCI's "GitHub token not set" healthcheck warning; the filesystem target
+      # never posts statuses (.lighthouse/status.cjs does that).
+      LHCI_GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
@@ -90,7 +93,7 @@ jobs:
       - name: Run Lighthouse CI
         run: npm run lighthouse
 
-      # Best effort: the summary just skips the comparison if there's no earlier run or its artifact expired.
+      # Best effort: without an earlier run that has reports, the summary just skips the comparison.
       - name: Download previous reports
         if: always()
         continue-on-error: true
@@ -98,11 +101,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          run_id=$(gh run list --workflow deploy-theme.yml --branch "$GITHUB_REF_NAME" --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          gh run list --workflow deploy-theme.yml --branch "$GITHUB_REF_NAME" --status success --limit 1 \
+            --json databaseId,headSha,createdAt,displayTitle \
+            --jq '.[0] | select(.) | .databaseId, .headSha, .createdAt, .displayTitle' > "$RUNNER_TEMP/previous-run"
+          { read -r run_id; read -r sha; read -r created_at; read -r title; } < "$RUNNER_TEMP/previous-run" || true
           if [ -z "$run_id" ]; then echo "No previous successful run on $GITHUB_REF_NAME"; exit 0; fi
-          gh run download "$run_id" --name "lighthouse-$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/lighthouse-baseline"
-          echo "LHCI_BASELINE_DIR=$RUNNER_TEMP/lighthouse-baseline" >> "$GITHUB_ENV"
-          echo "LHCI_BASELINE_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id" >> "$GITHUB_ENV"
+          if ! gh run download "$run_id" --name "lighthouse-$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/lighthouse-baseline"; then
+            echo "Run $run_id has no Lighthouse reports (it predates Lighthouse, or they expired)"; exit 0
+          fi
+          {
+            echo "LHCI_BASELINE_DIR=$RUNNER_TEMP/lighthouse-baseline"
+            echo "LHCI_BASELINE_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
+            echo "LHCI_BASELINE_SHA=$sha"
+            echo "LHCI_BASELINE_DATE=$created_at"
+            echo "LHCI_BASELINE_TITLE=$title"
+          } >> "$GITHUB_ENV"
 
       - name: Score summary
         if: always()
