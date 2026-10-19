@@ -1,6 +1,6 @@
 // Prints the representative Lighthouse results as Markdown (for $GITHUB_STEP_SUMMARY).
 // When LHCI_BASELINE_DIR points at a previous run's reports, the summary lists what changed since then
-// and the tables show before → after. LHCI_BASELINE_{URL,SHA,TITLE,DATE} describe that run.
+// and the tables mark meaningful changes. LHCI_BASELINE_{URL,SHA,TITLE,DATE} describe that run.
 const { loadResults } = require('./results.cjs');
 
 // Changes smaller than these are run-to-run noise, not real regressions or improvements.
@@ -62,12 +62,11 @@ function compare(column, lhr, baselineLhr) {
   };
 }
 
-function cell(column, { after, before, significant }) {
+// Current value only; the change is shown just when it's meaningful (details are in "What changed").
+function cell(column, { after, delta, significant }) {
   if (!after) return '–';
   const now = `${dot(after.score)} ${format(after.value, column.unit)}`;
-  if (!before) return now;
-  const text = `${format(before.value, column.unit)} → ${now}`;
-  return significant ? `**${text}**` : text;
+  return significant ? `${now} (${formatDelta(delta, column.unit)})` : now;
 }
 
 const table = (headers, rows) =>
@@ -154,4 +153,4 @@ ${table(['Page', ...CATEGORIES.map((c) => c.name)], rows(CATEGORIES))}
 
 ${table(['Page', ...METRICS.map((c) => c.name)], rows(METRICS))}
 
-🟢 good · 🟠 needs improvement · 🔴 poor${baselinePages ? ' · **bold** = meaningful change' : ''}. Full HTML reports are in the **Artifacts** section of this run.`);
+🟢 good · 🟠 needs improvement · 🔴 poor${baselinePages ? ' · (±n) = meaningful change since the compared run' : ''}. Full HTML reports are in the **Artifacts** section of this run.`);
